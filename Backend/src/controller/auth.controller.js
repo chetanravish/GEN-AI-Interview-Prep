@@ -3,10 +3,6 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import config from "../config/config.js";
 import { tokenBlacklistModel } from "../models/blacklist.model.js";
-import { generateOtp, getOtpHtml } from "../utils/utils.js";
-import { sendEmail } from "../services/email.service.js";
-import otpModel from "../models/otpModel.js";
-import crypto from 'crypto'
 
 
 export async function registerUser(req, res) {
@@ -35,16 +31,6 @@ export async function registerUser(req, res) {
     email,
     password: hashedPassword,
   });
-  const otp = generateOtp();
-  const html = getOtpHtml(otp, email, username);
-  const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
-  await otpModel.create({
-    email,
-    user: user._id,
-    otpHash,
-  });
-
-  await sendEmail(email, "OTP Verification", `Your OTP Code Is ${otp}`, html);
 
   return res.status(200).json({
     message: "User registered successfully",
@@ -70,12 +56,6 @@ export async function loginUser(req, res) {
     return res.status(400).json({
       message: "invalid email or password",
     });
-  }
-
-  if(!user.verified){
-    return res.status(401).json({
-        message:"User is not verified"
-    })
   }
 
   const token = jwt.sign(
@@ -119,49 +99,5 @@ export async function getMe(req, res) {
     id: user._id,
     username: user.username,
     email: user.email,
-  });
-}
-
-export async function verifyEmail(req, res) {
-  const { otp, email } = req.body;
-
-  const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
-
-  const otpDoc = await otpModel.findOne({
-    email,
-    otpHash,
-  });
-
-  if (!otpDoc) {
-    return res.status(400).json({
-      message: "Invalid OTP",
-    });
-  }
-
-  const OTP_EXPIRY_MS = 10 * 60 * 1000;
-  const elapsed = Date.now() - otpDoc.createdAt.getTime();
-
-  if (elapsed > OTP_EXPIRY_MS) {
-    await otpModel.deleteOne({ _id: otpDoc._id });
-    return res.status(400).json({
-      message: "OTP expired, please request a new one",
-    });
-  }
-
-  const user = await userModel.findByIdAndUpdate(otpDoc.user, {
-    verified: true,
-  });
-
-  await otpModel.deleteMany({
-    user: otpDoc.user,
-  });
-
-  return res.status(200).json({
-    message: "Email verified successfully",
-    user: {
-      username: user.username,
-      email: user.email,
-      verified: user.verified,
-    },
   });
 }
